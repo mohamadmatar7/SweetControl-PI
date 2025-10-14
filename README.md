@@ -44,7 +44,7 @@ It uses a **Raspberry Pi 5** as the main controller (core logic), and separates 
 ### 1️⃣ Clone the repository
 
 ```bash
-git clone https://github.com/yourname/sweet-control.git
+git clone https://github.com/yourname/SweetControl-PI.git
 cd sweet-control
 ```
 
@@ -131,7 +131,3 @@ Modular • Scalable • Real-time
 - Mollie payments to support donations for Warmste Week, raising funds for diabetes research.
 - Each donor’s name, email, and donation amount will be securely stored in a SQLite database.
 - A live donation page.
-
----
-
-**Sweet Control — Real hardware meets modern web.**
