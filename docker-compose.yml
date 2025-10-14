@@ -1,0 +1,44 @@
+services:
+  core:
+    build:
+      context: .
+      dockerfile: ./core/Dockerfile
+    container_name: sweet-core
+    command: npm run dev
+    volumes:
+      - ./core:/app
+      - ./containers:/app/containers
+      - /sys:/sys
+      - /dev:/dev
+      - /app/node_modules
+    env_file:
+      - ./core/.env
+    restart: always
+    ports:
+      - "4000:4000"
+    privileged: true
+    devices:
+      - "/dev/gpiomem:/dev/gpiomem"
+    networks:
+      - sweetnet
+
+  web:
+    build: ./web
+    container_name: sweet-web
+    command: npm run dev
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    env_file:
+      - ./web/.env.local
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - core
+    networks:
+      - sweetnet
+
+networks:
+  sweetnet:
+    driver: bridge

@@ -1,0 +1,26 @@
+# === Global Ignore Rules ===
+# Node dependencies
+**/node_modules
+**/npm-debug.log
+**/yarn-error.log
+
+# Env files
+*.env
+*.env.local
+*.env.production
+*.env.development
+
+# Build artifacts
+**/.next
+**/dist
+**/build
+
+# Docker / System stuff
+**/Dockerfile*
+**/docker-compose*.yml
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
