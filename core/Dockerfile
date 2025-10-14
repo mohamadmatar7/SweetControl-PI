@@ -1,28 +1,21 @@
-# Base image
-FROM node:18-alpine
+# Base image (Debian-based, works perfectly on Raspberry Pi)
+FROM node:18-bookworm
 
-# Install build tools (needed for epoll/onoff)
-RUN apk add --no-cache python3 make g++ linux-headers
+# 🧰 Install dependencies including libgpiod tools
+RUN apt-get update && apt-get install -y \
+    python3 make g++ \
+    gpiod libgpiod-dev libgpiod2 && \
+    rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
 COPY ./core/package*.json ./
-
-# Install all dependencies (not only production)
-# so epoll can rebuild properly
 RUN npm install
 
-# Copy source code
 COPY ./core .
 COPY ./containers ./containers
 
-# Rebuild epoll to match the current Node version
-RUN npm rebuild epoll
+RUN npm rebuild epoll || true
 
-# Expose API port
 EXPOSE 4000
-
-# Run the app
 CMD ["npm", "run", "dev"]

@@ -1,63 +1,51 @@
-let Gpio;
-let gpioAvailable = false;
+import { execSync } from "child_process";
 
-try {
-  const onoff = await import('onoff');
-  Gpio = onoff.Gpio;
-  // 🧪 اختبار فعلي للـ GPIO
-  try {
-    const testPin = new Gpio(4, 'out');
-    testPin.writeSync(0);
-    testPin.unexport();
-    gpioAvailable = true;
-    console.log("🟢 GPIO hardware mode enabled (onoff working).");
-  } catch (innerErr) {
-    console.warn("⚠️ GPIO not writable, switching to simulation mode:", innerErr.message);
-  }
-} catch (err) {
-  console.warn("⚠️ GPIO library not found, running in simulation mode:", err.message);
-}
-
-// fallback class (simulation)
-if (!gpioAvailable) {
-  Gpio = class {
-    constructor(pin, dir) {
-      this.pin = pin;
-      this.dir = dir;
-    }
-    writeSync(value) {
-      console.log(`💡 Simulated GPIO ${this.pin} (${this.dir}) = ${value}`);
-    }
-    unexport() {}
-  };
-}
-
-// Define GPIO pins for each direction
-const leds = {
-  up: new Gpio(17, 'out'),
-  down: new Gpio(27, 'out'),
-  left: new Gpio(22, 'out'),
-  right: new Gpio(23, 'out'),
+const pins = {
+  up: 17,
+  down: 27,
+  left: 22,
+  right: 23,
 };
 
-// Turn all LEDs off
-function resetLeds() {
-  Object.values(leds).forEach(pin => pin.writeSync(0));
-}
-
-// Turn on the LED for the given direction
-export function setDirection(direction) {
-  console.log(`🟢 Direction: ${direction}`);
-  resetLeds();
-
-  if (leds[direction]) {
-    leds[direction].writeSync(1);
+// Initialize all pins as output and off
+for (const pin of Object.values(pins)) {
+  try {
+    execSync(`gpioset gpiochip0 ${pin}=0`);
+  } catch (e) {
+    console.warn(`⚠️ Couldn't init GPIO ${pin}:`, e.message);
   }
 }
 
-// Turn off everything on exit
-process.on('SIGINT', () => {
+function resetLeds() {
+  for (const pin of Object.values(pins)) {
+    try {
+      execSync(`gpioset gpiochip0 ${pin}=0`);
+    } catch {}
+  }
+}
+
+export function setDirection(direction) {
+  console.log(`🟢 Blink direction: ${direction}`);
   resetLeds();
-  Object.values(leds).forEach(pin => pin.unexport());
+
+  const pin = pins[direction];
+  if (pin !== undefined) {
+    try {
+      // Turn LED ON
+      execSync(`gpioset gpiochip0 ${pin}=1`);
+      // Wait 200ms then turn it OFF
+      setTimeout(() => {
+        try {
+          execSync(`gpioset gpiochip0 ${pin}=0`);
+        } catch {}
+      }, 200);
+    } catch (e) {
+      console.warn(`⚠️ Failed to blink GPIO ${pin}:`, e.message);
+    }
+  }
+}
+
+process.on("SIGINT", () => {
+  resetLeds();
   process.exit();
 });
