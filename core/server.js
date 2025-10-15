@@ -2,6 +2,9 @@ import module from "module";
 import path from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import express from "express";
+import cors from "cors";
+import Pusher from "pusher";
 
 // ------------------------------------------------------------------
 // 🧩 Allow modules in /core/node_modules to be resolved everywhere
@@ -11,25 +14,24 @@ process.env.NODE_PATH = path.resolve(__dirname, "node_modules");
 module.Module._initPaths();
 
 // ------------------------------------------------------------------
-// Regular imports
+// 🧩 Auto-detect motor controller
 // ------------------------------------------------------------------
-import express from "express";
-import cors from "cors";
-import Pusher from "pusher";
-
-// 🧩 Auto-detect path to ledControl.js
 let ledPath = path.join(__dirname, "containers/motor/ledControl.js"); // Docker path
 if (!existsSync(ledPath)) {
   ledPath = path.join(__dirname, "../containers/motor/ledControl.js"); // Host path
 }
-
 const { setDirection } = await import(`file://${ledPath}`);
 
+// ------------------------------------------------------------------
+// ⚙️ Express setup
+// ------------------------------------------------------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Pusher
+// ------------------------------------------------------------------
+// 📡 Pusher setup
+// ------------------------------------------------------------------
 const pusher = new Pusher({
   appId: process.env.PUSHER_APP_ID,
   key: process.env.PUSHER_KEY,
@@ -39,7 +41,7 @@ const pusher = new Pusher({
 });
 
 // ------------------------------------------------------------------
-// Motor logic
+// 🚗 Motor logic
 // ------------------------------------------------------------------
 let position = { x: 0, y: 0 };
 
@@ -74,4 +76,36 @@ app.post("/move", async (req, res) => {
   }
 });
 
+// ------------------------------------------------------------------
+// 🎧 Motor page events
+// ------------------------------------------------------------------
+app.post("/motor_start", async (req, res) => {
+  console.log("🎧 Motor page opened");
+
+  try {
+    await pusher.trigger("joystick", "motor_start", {});
+    console.log("📡 Pusher → motor_start sent");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Failed to trigger motor_start:", err);
+    res.status(500).json({ error: "pusher failed" });
+  }
+});
+
+app.post("/motor_stop", async (req, res) => {
+  console.log("🛑 Motor page closed");
+
+  try {
+    await pusher.trigger("joystick", "motor_stop", {});
+    console.log("📡 Pusher → motor_stop sent");
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Failed to trigger motor_stop:", err);
+    res.status(500).json({ error: "pusher failed" });
+  }
+});
+
+// ------------------------------------------------------------------
+// 🚀 Start server
+// ------------------------------------------------------------------
 app.listen(4000, () => console.log("🚀 Core API running on port 4000"));

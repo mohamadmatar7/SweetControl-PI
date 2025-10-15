@@ -45,7 +45,7 @@ It uses a **Raspberry Pi 5** as the main controller (core logic), and separates 
 
 ```bash
 git clone https://github.com/yourname/SweetControl-PI.git
-cd sweet-control
+cd SweetControl-PI
 ```
 
 ### 2️⃣ Configure environments

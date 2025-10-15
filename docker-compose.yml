@@ -41,6 +41,28 @@ services:
     networks:
       - sweetnet
 
+  audio:
+    build:
+      context: ./containers/audio
+      args:
+        NODE_ENV: development
+    container_name: sweet-audio
+    command: npm run dev
+    network_mode: host
+    environment:
+      - PULSE_SERVER=unix:/run/user/1000/pulse/native
+      - XDG_RUNTIME_DIR=/run/user/1000
+      - PULSE_COOKIE=/run/user/1000/pulse/cookie
+    volumes:
+      - ./containers/audio:/app
+      - /app/node_modules
+      - /run/user/1000/pulse:/run/user/1000/pulse
+    env_file:
+      - ./web/.env.local
+    restart: always
+    depends_on:
+      - core
+
 networks:
   sweetnet:
     driver: bridge
