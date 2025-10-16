@@ -8,18 +8,23 @@ export default function JoystickPage() {
   const [direction, setDirection] = useState('stop');
 
   useEffect(() => {
-    // Read from env (Next.js exposes NEXT_PUBLIC_* to browser)
-    const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
-    const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
+const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
+const host =
+  typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname)
+    ? window.location.hostname 
+    : (process.env.NEXT_PUBLIC_SOKETI_HOST || "localhost");
+const port = Number(process.env.NEXT_PUBLIC_SOKETI_PORT || 6001);
+const useTLS = String(process.env.NEXT_PUBLIC_SOKETI_TLS || "false") === "true";
 
-    if (!key || !cluster) {
-      console.error('? Missing Pusher env vars');
-      return;
-    }
-
-    // Connect to Pusher
-    const pusher = new Pusher(key, { cluster });
-    const channel = pusher.subscribe('joystick');
+const pusher = new Pusher(key, {
+  wsHost: host,
+  wsPort: port,
+  wssPort: port,
+  forceTLS: useTLS,
+  enabledTransports: useTLS ? ["wss"] : ["ws"],
+  disableStats: true,
+});
+const channel = pusher.subscribe("joystick");
 
     channel.bind('move', (data) => {
       console.log('?? Movement received:', data);

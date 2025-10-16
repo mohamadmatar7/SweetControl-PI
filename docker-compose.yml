@@ -1,4 +1,20 @@
 services:
+  soketi:
+    image: quay.io/soketi/soketi:latest
+    container_name: sweet-soketi
+    ports:
+      - "6001:6001"
+    environment:
+      - SOKETI_DEBUG=0
+      - SOKETI_DEFAULT_APP_ID=myapp
+      - SOKETI_DEFAULT_APP_KEY=mykey
+      - SOKETI_DEFAULT_APP_SECRET=mysecret
+      - SOKETI_METRICS_ENABLED=false
+      - SOKETI_ALLOW_ORIGIN=*
+    restart: always
+    networks:
+      - sweetnet
+
   core:
     build:
       context: .
@@ -13,6 +29,13 @@ services:
       - /app/node_modules
     env_file:
       - ./core/.env
+    environment:
+      - PUSHER_HOST=soketi
+      - PUSHER_PORT=6001
+      - PUSHER_TLS=false
+      - PUSHER_APP_ID=myapp
+      - PUSHER_KEY=mykey
+      - PUSHER_SECRET=mysecret
     restart: always
     ports:
       - "4000:4000"
@@ -21,6 +44,8 @@ services:
       - SYS_RAWIO
     devices:
       - "/dev/gpiomem:/dev/gpiomem"
+    depends_on:
+      - soketi
     networks:
       - sweetnet
 
@@ -33,11 +58,18 @@ services:
       - /app/node_modules
     env_file:
       - ./web/.env.local
+    environment:
+      - NEXT_PUBLIC_PUSHER_KEY=mykey
+      - NEXT_PUBLIC_SOKETI_HOST=sweet-soketi
+      - NEXT_PUBLIC_SOKETI_PORT=6001
+      - NEXT_PUBLIC_SOKETI_TLS=false
+      - NEXT_PUBLIC_CORE_URL=http://sweet-core:4000
     restart: always
     ports:
       - "3000:3000"
     depends_on:
       - core
+      - soketi
     networks:
       - sweetnet
 
@@ -53,6 +85,10 @@ services:
       - PULSE_SERVER=unix:/run/user/1000/pulse/native
       - XDG_RUNTIME_DIR=/run/user/1000
       - PULSE_COOKIE=/run/user/1000/pulse/cookie
+      - SOKETI_HOST=localhost
+      - SOKETI_PORT=6001
+      - SOKETI_TLS=false
+      - PUSHER_KEY=mykey
     volumes:
       - ./containers/audio:/app
       - /app/node_modules
@@ -62,6 +98,7 @@ services:
     restart: always
     depends_on:
       - core
+      - soketi
 
 networks:
   sweetnet:

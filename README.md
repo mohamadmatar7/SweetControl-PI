@@ -15,10 +15,10 @@ It uses a **Raspberry Pi 5** as the main controller (core logic), and separates 
 
 | Layer                | Stack / Tools                            |
 | -------------------- | ---------------------------------------- |
-| **Core Logic**       | Node.js + Express + Pusher               |
+| **Core Logic**       | Node.js + Express                        |
 | **Frontend (Web)**   | Next.js (React, Tailwind, Framer Motion) |
-| **Communication**    | Pusher Channels (real-time updates)      |
-| **Hardware Control** | Raspberry Pi GPIO via `onoff`            |
+| **Communication**    | WebSocket (real-time updates) Soketi     |
+| **Hardware Control** | Raspberry Pi GPIO                        |
 | **Deployment**       | Docker + docker-compose                  |
 | **Environment**      | `.env` files per service                 |
 
@@ -80,10 +80,9 @@ docker-compose up --build
 ## Development Notes
 
 - Both **Core** and **Web** containers use `nodemon` for hot reload during development.
-- GPIO auto-detection is built-in:
-  - If real GPIO is available → uses `onoff`.
-  - If not → switches to simulation mode automatically.
-- Clear console logging helps you know when it’s in hardware or simulation mode.
+- GPIO control uses direct system commands (gpioset)
+  - All pins are initialized as output and set to OFF on startup.
+- Clear console logging indicates the active LED direction during operation.
 
 ---
 
