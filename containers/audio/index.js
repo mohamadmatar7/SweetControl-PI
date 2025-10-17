@@ -12,6 +12,7 @@ const sounds = {
   start: `${basePath}/background.mp3`,
   move: `${basePath}/move.mp3`,
   stop: `${basePath}/stop.mp3`,
+  grab: `${basePath}/grab.mp3`,
 };
 
 let backgroundProcess = null;
@@ -28,9 +29,11 @@ function playSound(file, { loop = false, persistent = false } = {}) {
     HOME: "/home/pi",
   };
 
-  const args = ["-nodisp", "-loglevel", "quiet", fullPath];
+  const args = [];
+  if (loop) args.push("-loop", "0");
+  args.push("-nodisp", "-loglevel", "quiet");
   if (!persistent) args.push("-autoexit");
-  if (loop) args.unshift("-loop", "0");
+  args.push(fullPath);
 
   const ff = spawn("ffplay", args, { env });
   ff.on("error", (err) => console.error("ffplay failed:", err.message));
@@ -46,7 +49,6 @@ const ws = new WebSocket(wsUrl);
 ws.on("open", () => {
   console.log("Connected to Soketi server");
 
-  // Subscribe to the joystick channel
   ws.send(
     JSON.stringify({
       event: "pusher:subscribe",
@@ -59,6 +61,19 @@ ws.on("message", (message) => {
   try {
     const parsed = JSON.parse(message.toString());
     if (!parsed.event || !parsed.channel) return;
+
+    console.log("🔊 Received:", parsed.event, parsed.data);
+
+    // Parse data if it comes as a JSON string
+    let data = parsed.data;
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch (err) {
+        console.error("Failed to parse event data:", data);
+        return;
+      }
+    }
 
     const startTime = performance.now();
 
@@ -73,9 +88,20 @@ ws.on("message", (message) => {
         break;
 
       case "move": {
+        const { direction } = data || {};
         const now = Date.now();
+
+        if (!direction) return;
+
+        if (direction === "grab") {
+          console.log("grab received");
+          playSound(sounds.grab);
+          lastMoveTime = now;
+          return;
+        }
+
         if (now - lastMoveTime >= MOVE_COOLDOWN_MS) {
-          console.log("move received");
+          console.log("move received:", direction);
           playSound(sounds.move);
           lastMoveTime = now;
         }
@@ -96,8 +122,8 @@ ws.on("message", (message) => {
     console.log(
       `Event "${parsed.event}" handled in ${(endTime - startTime).toFixed(2)} ms`
     );
-  } catch {
-    // Ignore control messages
+  } catch (err) {
+    console.error("Error handling message:", err.message);
   }
 });
 

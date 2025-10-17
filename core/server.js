@@ -18,12 +18,12 @@ if (!existsSync(ledPath)) {
 }
 const { setDirection } = await import(`file://${ledPath}`);
 
-// ⚙️ Express setup
+// Express setup
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 📡 Pusher (Soketi) configuration
+// Pusher (Soketi) configuration
 const pusher = new Pusher({
   appId: process.env.PUSHER_APP_ID || "myapp",
   key: process.env.PUSHER_KEY || "mykey",
@@ -37,79 +37,69 @@ const pusher = new Pusher({
 // Motor movement state
 let position = { x: 0, y: 0 };
 
-// Root test
-app.get("/", (req, res) => res.send("✅ Core API running"));
+// Root endpoint
+app.get("/", (req, res) => res.send("Core API running"));
 
-// 🎮 Move command endpoint
+// Handle joystick movement
 app.post("/move", async (req, res) => {
   const { direction } = req.body;
   if (!direction) return res.status(400).json({ error: "No direction provided" });
 
   const step = 30;
   switch (direction) {
-    case "up":
-      position.y = Math.max(position.y - step, -120);
-      break;
-    case "down":
-      position.y = Math.min(position.y + step, 120);
-      break;
-    case "left":
-      position.x = Math.max(position.x - step, -120);
-      break;
-    case "right":
-      position.x = Math.min(position.x + step, 120);
-      break;
-    case "reset":
-      position = { x: 0, y: 0 };
-      break;
+    case "up": position.y = Math.max(position.y - step, -120); break;
+    case "down": position.y = Math.min(position.y + step, 120); break;
+    case "left": position.x = Math.max(position.x - step, -120); break;
+    case "right": position.x = Math.min(position.x + step, 120); break;
+    case "reset": position = { x: 0, y: 0 }; break;
+    case "grab": break; // no position change, just trigger grab
   }
 
   try {
     setDirection(direction);
   } catch (err) {
-    console.warn("⚠️ LED control failed:", err.message);
+    console.warn("LED control failed:", err.message);
   }
 
   try {
     await pusher.trigger("joystick", "move", { direction, ...position });
-    console.log(`📡 [move] Sent → ${direction}`, position);
+    console.log(`[move] Sent → ${direction}`, position);
     res.json({ ok: true, direction, position });
   } catch (error) {
-    console.error("❌ Pusher trigger failed:", error.message);
+    console.error("Pusher trigger failed:", error.message);
     res.status(500).json({ error: "Pusher failed" });
   }
 });
 
+
 // Motor start (plays background sound)
 app.post("/motor_start", async (req, res) => {
-  console.log("🎧 Motor page opened");
+  console.log("Motor page opened");
   try {
     await pusher.trigger("joystick", "motor_start", {});
-    console.log("📡 [motor_start] sent");
+    console.log("[motor_start] sent");
     res.json({ ok: true });
   } catch (err) {
-    console.error("❌ Failed to trigger motor_start:", err.message);
+    console.error("Failed to trigger motor_start:", err.message);
     res.status(500).json({ error: "pusher failed" });
   }
 });
 
-//  Motor stop (stops background sound)
+// Motor stop (stops background sound)
 app.post("/motor_stop", async (req, res) => {
-  console.log("🛑 Motor page closed");
+  console.log("Motor page closed");
   try {
     await pusher.trigger("joystick", "motor_stop", {});
-    console.log("📡 [motor_stop] sent");
+    console.log("[motor_stop] sent");
     res.json({ ok: true });
   } catch (err) {
-    console.error("❌ Failed to trigger motor_stop:", err.message);
+    console.error("Failed to trigger motor_stop:", err.message);
     res.status(500).json({ error: "pusher failed" });
   }
 });
 
-
 // Start server
-
 app.listen(4000, () => {
-  console.log("🚀 Core API running on port 4000");
-  console.log("🔗 Connected to Soketi:", `${pusher.config.host}:${pusher.config.port}`);
+  console.log("Core API running on port 4000");
+  console.log("Connected to Soketi:", `${pusher.config.host}:${pusher.config.port}`);
 });
