@@ -6,6 +6,7 @@ import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Hand } from 'lucide-react';
 
 export default function JoystickPage() {
   const [direction, setDirection] = useState('stop');
+  const [position, setPosition] = useState({ x: 0, y: 0 }); // current motor position
   const intervalRef = useRef(null);
 
   useEffect(() => {
@@ -28,8 +29,10 @@ export default function JoystickPage() {
 
     const channel = pusher.subscribe('joystick');
     channel.bind('move', (data) => {
-      console.log('Movement received:', data);
       setDirection(data.direction);
+      if (data.x !== undefined && data.y !== undefined) {
+        setPosition({ x: data.x, y: data.y });
+      }
     });
 
     return () => {
@@ -38,26 +41,31 @@ export default function JoystickPage() {
     };
   }, []);
 
-  // Send movement command
   const sendCommand = async (cmd) => {
     try {
-      await fetch('/api/move', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direction: cmd }),
-      });
+      if (cmd === 'grab') {
+        await fetch('/api/grab', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ position }),
+        });
+      } else {
+        await fetch('/api/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction: cmd }),
+        });
+      }
     } catch (err) {
       console.error('Could not reach backend:', err);
     }
   };
 
-  // Start continuous movement
   const startHolding = (cmd) => {
-    sendCommand(cmd); // send immediately
-    intervalRef.current = setInterval(() => sendCommand(cmd), 250); // repeat every 250ms
+    sendCommand(cmd);
+    intervalRef.current = setInterval(() => sendCommand(cmd), 250);
   };
 
-  // Stop continuous movement
   const stopHolding = () => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -122,7 +130,9 @@ export default function JoystickPage() {
         <div></div>
       </div>
 
-      <div className="mt-6 text-lg font-semibold">Direction: {direction}</div>
+      <div className="mt-6 text-lg font-semibold">
+        Direction: {direction} | X: {position.x} Y: {position.y}
+      </div>
     </div>
   );
 }

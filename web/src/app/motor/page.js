@@ -9,8 +9,32 @@ export default function MotorSimulator() {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [grabEffect, setGrabEffect] = useState(false);
   const [shake, setShake] = useState(false);
+  const [objects, setObjects] = useState([]);
 
-  // Handle motor movement
+  const BOX_SIZE = 320;
+  const HALF = BOX_SIZE / 2;
+  const MIN_DISTANCE = 70;
+
+  const generatePositions = (count) => {
+    const placed = [];
+    for (let i = 0; i < count; i++) {
+      let pos;
+      let tries = 0;
+      do {
+        pos = {
+          x: Math.floor(Math.random() * 220 - 110),
+          y: Math.floor(Math.random() * 220 - 110),
+        };
+        tries++;
+      } while (
+        placed.some((p) => Math.hypot(p.x - pos.x, p.y - pos.y) < MIN_DISTANCE) &&
+        tries < 50
+      );
+      placed.push(pos);
+    }
+    return placed;
+  };
+
   const moveMotor = (dir) => {
     setPosition((prev) => {
       let { x, y } = prev;
@@ -19,112 +43,141 @@ export default function MotorSimulator() {
       if (dir === 'down') y += step;
       if (dir === 'left') x -= step;
       if (dir === 'right') x += step;
-
-      // Keep within boundaries
       x = Math.max(-120, Math.min(120, x));
       y = Math.max(-120, Math.min(120, y));
-
       return { x, y };
     });
   };
 
   useEffect(() => {
-    let coreUrl = process.env.NEXT_PUBLIC_CORE_URL || "http://sweet-core:4000";
+    async function initLayout() {
+      try {
+        const res = await fetch('/api/objects');
+        const data = await res.json();
+        const positions = generatePositions(data.length);
+        const randomized = data.map((obj, i) => ({
+          ...obj,
+          ...positions[i],
+          color: `hsl(${Math.random() * 360}, 70%, 75%)`,
+        }));
 
-    if (typeof window !== "undefined") {
-      const isDocker =
-        window.location.hostname === "sweet-web" ||
-        window.location.hostname === "localhost";
+        setObjects(randomized);
 
-      if (!isDocker) {
-        const host = window.location.hostname;
-        coreUrl = `http://${host}:4000`;
+        // Ensure layout sent BEFORE any grab happens
+        const layoutRes = await fetch('/api/objects_layout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objects: randomized }),
+        });
+        if (layoutRes.ok) console.log("✅ Sent object layout to Core");
+      } catch (err) {
+        console.error("❌ Failed to send layout:", err.message);
       }
     }
 
-    console.log("Using Core URL →", coreUrl);
+    initLayout();
 
-    // Notify server that motor visualization started
-    fetch(`${coreUrl}/motor_start`, { method: "POST" })
-      .then(() => console.log("motor_start sent"))
-      .catch((err) => console.error("motor_start failed:", err.message));
-
+    // Setup Pusher
     const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
-    const host =
-      typeof window !== "undefined" && !["localhost", "127.0.0.1"].includes(window.location.hostname)
-        ? window.location.hostname
-        : (process.env.NEXT_PUBLIC_SOKETI_HOST || "localhost");
+    const host = process.env.NEXT_PUBLIC_SOKETI_HOST || 'localhost';
     const port = Number(process.env.NEXT_PUBLIC_SOKETI_PORT || 6001);
-    const useTLS = String(process.env.NEXT_PUBLIC_SOKETI_TLS || "false") === "true";
 
     const pusher = new Pusher(key, {
       wsHost: host,
       wsPort: port,
-      wssPort: port,
-      forceTLS: useTLS,
-      enabledTransports: useTLS ? ["wss"] : ["ws"],
+      forceTLS: false,
+      enabledTransports: ['ws'],
       disableStats: true,
     });
 
-    const channel = pusher.subscribe("joystick");
-    channel.bind("move", (data) => {
-      console.log("Move event received:", data.direction);
-      setDirection(data.direction);
+    const channel = pusher.subscribe('joystick');
 
-      if (data.direction === "grab") {
-        // Apply grab visual effect
+    channel.bind('move', (data) => {
+      setDirection(data.direction);
+      if (data.direction === 'grab') {
         setGrabEffect(true);
         setShake(true);
         setTimeout(() => setShake(false), 600);
-        setTimeout(() => setGrabEffect(false), 2000);
+        setTimeout(() => setGrabEffect(false), 1200);
       } else {
         moveMotor(data.direction);
       }
     });
 
-    // Send motor_stop on unload
-    const stopMotor = () => {
-      console.log("Sending motor_stop before unload...");
-      navigator.sendBeacon(`${coreUrl}/motor_stop`);
-    };
+    channel.bind('grab', (data) => {
+      console.log('🎯 Grab result:', data);
+    });
 
-    window.addEventListener("beforeunload", stopMotor);
+    const coreUrl = process.env.NEXT_PUBLIC_CORE_URL || 'http://sweet-core:4000';
+    fetch(`${coreUrl}/motor_start`, { method: 'POST' }).catch(() =>
+      console.warn('motor_start failed')
+    );
+
+    const stopMotor = () => navigator.sendBeacon(`${coreUrl}/motor_stop`);
+    window.addEventListener('beforeunload', stopMotor);
 
     return () => {
       stopMotor();
-      window.removeEventListener("beforeunload", stopMotor);
-      pusher.unsubscribe("joystick");
+      pusher.unsubscribe('joystick');
       pusher.disconnect();
+      window.removeEventListener('beforeunload', stopMotor);
     };
   }, []);
 
-  // UI
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 text-gray-800">
-      <h1 className="text-3xl font-bold mb-6">Motor Visualization</h1>
-      <p className="mb-4 text-lg">
-        Last Direction: <b>{direction}</b>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-indigo-50 to-blue-100 text-gray-800">
+      <h1 className="text-4xl font-bold mb-4 tracking-tight text-indigo-700">
+        Motor Visualization
+      </h1>
+      <p className="mb-6 text-lg text-gray-600">
+        Last Direction: <b className="text-indigo-800">{direction}</b>
       </p>
 
-      <div className="relative w-[300px] h-[300px] bg-gray-200 rounded-xl border-4 border-gray-400 flex items-center justify-center overflow-hidden">
+      <div className="relative w-[320px] h-[320px] bg-white rounded-3xl border border-indigo-200 shadow-lg overflow-hidden">
+        {objects.map((obj) => (
+          <motion.div
+            key={obj.id}
+            className="absolute flex flex-col items-center justify-center rounded-full text-[13px] font-semibold shadow-md select-none"
+            style={{
+              width: 60,
+              height: 60,
+              left: HALF + obj.x - 30,
+              top: HALF + obj.y - 30,
+              backgroundColor: obj.color,
+              color: '#1f2937',
+              boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+            }}
+            animate={{ y: [0, -3, 0], scale: [1, 1.05, 1] }}
+            transition={{
+              duration: 2.8,
+              repeat: Infinity,
+              ease: 'easeInOut',
+              delay: Math.random() * 1.5,
+            }}
+          >
+            <span className="text-center leading-tight">{obj.name}</span>
+          </motion.div>
+        ))}
+
         <motion.div
-          className="w-12 h-12 rounded-full shadow-lg"
+          className="absolute w-14 h-14 rounded-full shadow-lg border border-indigo-200"
           animate={{
             x: position.x,
             y: position.y,
-            scale: grabEffect ? 1.5 : 1,
-            backgroundColor: grabEffect ? "#9333ea" : "#3b82f6",
+            scale: grabEffect ? [1, 1.3, 1] : 1,
+            backgroundColor: grabEffect ? '#9333ea' : '#3b82f6',
             rotate: shake ? [0, -10, 10, -10, 0] : 0,
           }}
           transition={{
             duration: grabEffect ? 0.3 : 0.05,
-            ease: "easeOut",
+            ease: 'easeOut',
           }}
+          style={{ left: HALF - 28, top: HALF - 28 }}
         />
       </div>
 
-      <p className="mt-6 text-sm text-gray-500">
-        The blue circle shows the motor’s position in real time.
+      <p className="mt-8 text-sm text-gray-500">
+        Each candy is softly animated and evenly spaced.
       </p>
     </div>
   );
