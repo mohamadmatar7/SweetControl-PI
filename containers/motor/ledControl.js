@@ -42,8 +42,8 @@ export function setDirection(direction) {
           setTimeout(() => execSync(`gpioset gpiochip0 ${pin}=0`), 100);
         } catch {}
         count++;
-        if (count >= 4) clearInterval(blink);
-      }, 250); // delay between blinks
+        if (count >= 5) clearInterval(blink);
+      }, 200); // delay between blinks
     } else {
       // Normal single blink for directions
       execSync(`gpioset gpiochip0 ${pin}=1`);

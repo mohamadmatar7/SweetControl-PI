@@ -24,6 +24,7 @@ services:
     volumes:
       - ./core:/app
       - ./containers:/app/containers
+      - ./db:/db
       - /sys:/sys
       - /dev:/dev
       - /app/node_modules
@@ -49,21 +50,38 @@ services:
     networks:
       - sweetnet
 
+  # web:
+  #   build: ./web
+  #   container_name: sweet-web
+  #   command: npm run dev
+  #   volumes:
+  #     - ./web:/app
+  #     - /app/node_modules
+  #   env_file:
+  #     - ./web/.env.local
+  #   # environment:
+  #   #   - NEXT_PUBLIC_PUSHER_KEY=mykey
+  #   #   - NEXT_PUBLIC_SOKETI_HOST=sweet-soketi
+  #   #   - NEXT_PUBLIC_SOKETI_PORT=6001
+  #   #   - NEXT_PUBLIC_SOKETI_TLS=false
+  #   #   - NEXT_PUBLIC_CORE_URL=http://sweet-core:4000
+  #   restart: always
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - core
+  #     - soketi
+  #   networks:
+  #     - sweetnet
+
   web:
     build: ./web
     container_name: sweet-web
     command: npm run dev
     volumes:
       - ./web:/app
-      - /app/node_modules
     env_file:
       - ./web/.env.local
-    environment:
-      - NEXT_PUBLIC_PUSHER_KEY=mykey
-      - NEXT_PUBLIC_SOKETI_HOST=sweet-soketi
-      - NEXT_PUBLIC_SOKETI_PORT=6001
-      - NEXT_PUBLIC_SOKETI_TLS=false
-      - NEXT_PUBLIC_CORE_URL=http://sweet-core:4000
     restart: always
     ports:
       - "3000:3000"
@@ -73,6 +91,32 @@ services:
     networks:
       - sweetnet
 
+  # audio:
+  #   build:
+  #     context: ./containers/audio
+  #     args:
+  #       NODE_ENV: development
+  #   container_name: sweet-audio
+  #   command: npm run dev
+  #   network_mode: host
+  #   environment:
+  #     - PULSE_SERVER=unix:/run/user/1000/pulse/native
+  #     - XDG_RUNTIME_DIR=/run/user/1000
+  #     - PULSE_COOKIE=/run/user/1000/pulse/cookie
+  #     - SOKETI_HOST=localhost
+  #     - SOKETI_PORT=6001
+  #     - SOKETI_TLS=false
+  #     - PUSHER_KEY=mykey
+  #   volumes:
+  #     - ./containers/audio:/app
+  #     - /app/node_modules
+  #     - /run/user/1000/pulse:/run/user/1000/pulse
+  #   env_file:
+  #     - ./web/.env.local
+  #   restart: always
+  #   depends_on:
+  #     - core
+  #     - soketi
   audio:
     build:
       context: ./containers/audio
@@ -80,12 +124,11 @@ services:
         NODE_ENV: development
     container_name: sweet-audio
     command: npm run dev
-    network_mode: host
     environment:
       - PULSE_SERVER=unix:/run/user/1000/pulse/native
       - XDG_RUNTIME_DIR=/run/user/1000
       - PULSE_COOKIE=/run/user/1000/pulse/cookie
-      - SOKETI_HOST=localhost
+      - SOKETI_HOST=soketi
       - SOKETI_PORT=6001
       - SOKETI_TLS=false
       - PUSHER_KEY=mykey
@@ -99,6 +142,8 @@ services:
     depends_on:
       - core
       - soketi
+    networks:
+      - sweetnet
 
 networks:
   sweetnet:

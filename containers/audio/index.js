@@ -13,11 +13,13 @@ const sounds = {
   move: `${basePath}/move.mp3`,
   stop: `${basePath}/stop.mp3`,
   grab: `${basePath}/grab.mp3`,
+  alert: `${basePath}/alert.mp3`, // Add this new alert sound file
 };
 
 let backgroundProcess = null;
+let alertInterval = null;
 let lastMoveTime = 0;
-const MOVE_COOLDOWN_MS = 200; // Minimum delay between move sounds
+const MOVE_COOLDOWN_MS = 200;
 
 // Play a sound using ffplay
 function playSound(file, { loop = false, persistent = false } = {}) {
@@ -40,15 +42,36 @@ function playSound(file, { loop = false, persistent = false } = {}) {
   return ff;
 }
 
-// Connect to Soketi server
+// Start alert beep loop (dynamic speed)
+function startAlertLoop(sugarValue) {
+  stopAlertLoop();
+
+  // The higher the sugar value, the faster the beep
+  const intervalTime = Math.max(200, 1000 - (sugarValue - 175) * 10);
+
+  console.log(`Starting alert loop at ${intervalTime} ms`);
+
+  alertInterval = setInterval(() => {
+    playSound(sounds.alert);
+  }, intervalTime);
+}
+
+// Stop alert loop
+function stopAlertLoop() {
+  if (alertInterval) {
+    clearInterval(alertInterval);
+    alertInterval = null;
+    console.log("Alert loop stopped");
+  }
+}
+
+// Connect to Soketi
 const wsUrl = `ws://${HOST}:${PORT}/app/${APP_KEY}?protocol=7&client=js&version=8.4.0`;
 console.log("Connecting to Soketi:", wsUrl);
-
 const ws = new WebSocket(wsUrl);
 
 ws.on("open", () => {
   console.log("Connected to Soketi server");
-
   ws.send(
     JSON.stringify({
       event: "pusher:subscribe",
@@ -60,24 +83,26 @@ ws.on("open", () => {
 ws.on("message", (message) => {
   try {
     const parsed = JSON.parse(message.toString());
-    if (!parsed.event || !parsed.channel) return;
+    const eventName = parsed.event;
+    if (!eventName) return;
 
-    console.log("🔊 Received:", parsed.event, parsed.data);
-
-    // Parse data if it comes as a JSON string
     let data = parsed.data;
     if (typeof data === "string") {
       try {
         data = JSON.parse(data);
-      } catch (err) {
-        console.error("Failed to parse event data:", data);
-        return;
+      } catch {
+        data = {};
       }
     }
 
+    console.log("Received event:", eventName, data);
     const startTime = performance.now();
 
-    switch (parsed.event) {
+    switch (eventName) {
+      case "pusher_internal:subscription_succeeded":
+        console.log("Subscribed to joystick channel");
+        break;
+
       case "motor_start":
         console.log("motor_start received");
         if (!backgroundProcess)
@@ -87,10 +112,19 @@ ws.on("message", (message) => {
           });
         break;
 
+      case "motor_stop":
+        console.log("motor_stop received");
+        if (backgroundProcess) {
+          backgroundProcess.kill("SIGTERM");
+          backgroundProcess = null;
+        }
+        playSound(sounds.stop);
+        stopAlertLoop();
+        break;
+
       case "move": {
         const { direction } = data || {};
         const now = Date.now();
-
         if (!direction) return;
 
         if (direction === "grab") {
@@ -101,26 +135,29 @@ ws.on("message", (message) => {
         }
 
         if (now - lastMoveTime >= MOVE_COOLDOWN_MS) {
-          console.log("move received:", direction);
           playSound(sounds.move);
           lastMoveTime = now;
         }
         break;
       }
 
-      case "motor_stop":
-        console.log("motor_stop received");
-        if (backgroundProcess) {
-          backgroundProcess.kill("SIGTERM");
-          backgroundProcess = null;
+      // New event: sugar level alert
+      case "sugar_alert": {
+        const { level } = data || {};
+        console.log(`Sugar level alert: ${level}`);
+
+        if (level > 175) {
+          startAlertLoop(level);
+        } else {
+          stopAlertLoop();
         }
-        playSound(sounds.stop);
         break;
+      }
     }
 
     const endTime = performance.now();
     console.log(
-      `Event "${parsed.event}" handled in ${(endTime - startTime).toFixed(2)} ms`
+      `Event "${eventName}" handled in ${(endTime - startTime).toFixed(2)} ms`
     );
   } catch (err) {
     console.error("Error handling message:", err.message);
@@ -132,6 +169,7 @@ ws.on("close", () => console.log("Disconnected from Soketi"));
 
 process.on("SIGINT", () => {
   if (backgroundProcess) backgroundProcess.kill("SIGTERM");
+  stopAlertLoop();
   ws.close();
   process.exit();
 });

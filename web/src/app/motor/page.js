@@ -15,6 +15,7 @@ export default function MotorSimulator() {
   const HALF = BOX_SIZE / 2;
   const MIN_DISTANCE = 70;
 
+  // Generate evenly spaced object positions
   const generatePositions = (count) => {
     const placed = [];
     for (let i = 0; i < count; i++) {
@@ -62,22 +63,19 @@ export default function MotorSimulator() {
         }));
 
         setObjects(randomized);
-
-        // Ensure layout sent BEFORE any grab happens
-        const layoutRes = await fetch('/api/objects_layout', {
+        await fetch('/api/objects_layout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ objects: randomized }),
         });
-        if (layoutRes.ok) console.log("✅ Sent object layout to Core");
+        console.log('✅ Sent object layout to Core');
       } catch (err) {
-        console.error("❌ Failed to send layout:", err.message);
+        console.error('❌ Failed to send layout:', err.message);
       }
     }
 
     initLayout();
 
-    // Setup Pusher
     const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
     const host = process.env.NEXT_PUBLIC_SOKETI_HOST || 'localhost';
     const port = Number(process.env.NEXT_PUBLIC_SOKETI_PORT || 6001);
@@ -105,22 +103,12 @@ export default function MotorSimulator() {
     });
 
     channel.bind('grab', (data) => {
-      console.log('🎯 Grab result:', data);
+      console.log('Grab result:', data);
     });
 
-    const coreUrl = process.env.NEXT_PUBLIC_CORE_URL || 'http://sweet-core:4000';
-    fetch(`${coreUrl}/motor_start`, { method: 'POST' }).catch(() =>
-      console.warn('motor_start failed')
-    );
-
-    const stopMotor = () => navigator.sendBeacon(`${coreUrl}/motor_stop`);
-    window.addEventListener('beforeunload', stopMotor);
-
     return () => {
-      stopMotor();
       pusher.unsubscribe('joystick');
       pusher.disconnect();
-      window.removeEventListener('beforeunload', stopMotor);
     };
   }, []);
 
