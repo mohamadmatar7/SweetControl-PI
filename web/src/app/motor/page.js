@@ -112,6 +112,33 @@ export default function MotorSimulator() {
     };
   }, []);
 
+  // 🟢 Listen for global refresh_all signal
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
+    const host = process.env.NEXT_PUBLIC_SOKETI_HOST || 'localhost';
+    const port = Number(process.env.NEXT_PUBLIC_SOKETI_PORT || 6001);
+
+    const pusher = new Pusher(key, {
+      wsHost: host,
+      wsPort: port,
+      forceTLS: false,
+      enabledTransports: ['ws'],
+      disableStats: true,
+    });
+
+    const system = pusher.subscribe('system');
+    system.bind('refresh_all', () => {
+      console.log('[system] Refresh triggered → motor page reloading');
+      window.location.reload();
+    });
+
+    return () => {
+      system.unbind_all();
+      system.unsubscribe();
+      pusher.disconnect();
+    };
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-indigo-50 to-blue-100 text-gray-800">
       <h1 className="text-4xl font-bold mb-4 tracking-tight text-indigo-700">

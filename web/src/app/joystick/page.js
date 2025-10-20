@@ -41,6 +41,33 @@ export default function JoystickPage() {
     };
   }, []);
 
+  // 🟢 Listen for global refresh_all signal
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
+    const host = process.env.NEXT_PUBLIC_SOKETI_HOST || 'localhost';
+    const port = Number(process.env.NEXT_PUBLIC_SOKETI_PORT || 6001);
+
+    const pusher = new Pusher(key, {
+      wsHost: host,
+      wsPort: port,
+      forceTLS: false,
+      enabledTransports: ['ws'],
+      disableStats: true,
+    });
+
+    const system = pusher.subscribe('system');
+    system.bind('refresh_all', () => {
+      console.log('[system] Refresh triggered → joystick page reloading');
+      window.location.reload();
+    });
+
+    return () => {
+      system.unbind_all();
+      system.unsubscribe();
+      pusher.disconnect();
+    };
+  }, []);
+
   const sendCommand = async (cmd) => {
     try {
       if (cmd === 'grab') {

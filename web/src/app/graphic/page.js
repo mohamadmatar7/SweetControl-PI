@@ -27,35 +27,37 @@ export default function GraphicPage() {
   const [isAlert, setIsAlert] = useState(false);
   const [flashOpacity, setFlashOpacity] = useState(0);
   const [pulse, setPulse] = useState(false);
-
   const shakeControls = useAnimation();
 
-  // Play background audio once the page loads
+  // Helper to send requests to the core container
+  const sendToCore = async (endpoint, body = null) => {
+    try {
+      const coreHost =
+        typeof window !== "undefined" &&
+        window.location.hostname !== "sweet-web"
+          ? process.env.NEXT_PUBLIC_CORE_URL || "http://192.168.0.7:4000"
+          : "http://sweet-core:4000";
+
+      await fetch(`${coreHost}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (err) {
+      console.warn(`[core] ${endpoint} failed:`, err.message);
+    }
+  };
+
+  // Start audio on load
   useEffect(() => {
-    const coreHost =
-      typeof window !== "undefined" &&
-      window.location.hostname !== "sweet-web"
-        ? process.env.NEXT_PUBLIC_CORE_URL || "http://192.168.0.7:4000"
-        : "http://sweet-core:4000";
-
-    const startAudio = async () => {
-      try {
-        console.log("[audio] Starting background sound");
-        await fetch(`${coreHost}/motor_start`, { method: "POST" });
-      } catch (err) {
-        console.warn("Failed to start background audio:", err.message);
-      }
-    };
-
-    startAudio();
+    sendToCore("motor_start");
   }, []);
 
-  // Pusher setup (connect only once)
+  // Setup Pusher real-time updates
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
     const host = process.env.NEXT_PUBLIC_SOKETI_HOST || "localhost";
     const port = Number(process.env.NEXT_PUBLIC_SOKETI_PORT || 6001);
-
     const pusher = new Pusher(key, {
       wsHost: host,
       wsPort: port,
@@ -66,6 +68,7 @@ export default function GraphicPage() {
 
     const channel = pusher.subscribe("joystick");
 
+    // Listen for grab events
     channel.bind("grab", async (data) => {
       if (!data || data.name === "None" || data.sugar_value === 0) {
         console.log("Empty grab ignored");
@@ -77,8 +80,7 @@ export default function GraphicPage() {
       setDataPoints((prev) => {
         const prevValue = prev.at(-1);
         const newLevel = Math.min(prevValue + data.sugar_value, 300);
-        console.log(`[alert] Sent sugar level ${newLevel} to core`);
-        sendSugarLevelToCore(newLevel);
+        sendToCore("sugar_alert", { level: newLevel });
         return [...prev.slice(-11), newLevel];
       });
 
@@ -111,58 +113,63 @@ export default function GraphicPage() {
     };
   }, []);
 
-  // Send sugar level to core for audio alert
-  async function sendSugarLevelToCore(level) {
-    try {
-      const coreHost =
-        typeof window !== "undefined" &&
-        window.location.hostname !== "sweet-web"
-          ? process.env.NEXT_PUBLIC_CORE_URL || "http://192.168.0.7:4000"
-          : "http://sweet-core:4000";
-
-      await fetch(`${coreHost}/sugar_alert`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ level }),
-      });
-    } catch (err) {
-      console.warn("Failed to send sugar alert:", err.message);
-    }
-  }
-
-  // Handle page unload → stop audio + reset sugar level
+  // Stop sound and broadcast refresh when closing page
   useEffect(() => {
-    const coreHost =
-      typeof window !== "undefined" &&
-      window.location.hostname !== "sweet-web"
-        ? process.env.NEXT_PUBLIC_CORE_URL || "http://192.168.0.7:4000"
-        : "http://sweet-core:4000";
-
     const handleUnload = async () => {
-      try {
-        console.log("[unload] Sending motor_stop and resetting sugar level");
-        await fetch(`${coreHost}/motor_stop`, { method: "POST" });
-        await fetch(`${coreHost}/sugar_alert`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: 120 }),
-        });
-      } catch (err) {
-        console.warn("Unload failed:", err.message);
-      }
+      console.log("[unload] Stopping sound and notifying others");
+      await sendToCore("motor_stop");
+      await sendToCore("sugar_alert", { level: 120 });
+      await sendToCore("broadcast_refresh");
     };
-
     window.addEventListener("beforeunload", handleUnload);
     return () => window.removeEventListener("beforeunload", handleUnload);
   }, []);
 
-  // Detect alert mode when sugar > 175
+  // Listen for refresh_all broadcast (sync all clients)
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
+    const host = process.env.NEXT_PUBLIC_SOKETI_HOST || "localhost";
+    const port = Number(process.env.NEXT_PUBLIC_SOKETI_PORT || 6001);
+    const pusher = new Pusher(key, {
+      wsHost: host,
+      wsPort: port,
+      forceTLS: false,
+      enabledTransports: ["ws"],
+      disableStats: true,
+    });
+    const system = pusher.subscribe("system");
+
+    system.bind("refresh_all", () => {
+      console.log("[system] Refresh triggered");
+      window.location.reload();
+    });
+
+    return () => {
+      system.unbind_all();
+      system.unsubscribe();
+      pusher.disconnect();
+    };
+  }, []);
+
+  // Detect alert state
   useEffect(() => {
     const last = dataPoints.at(-1);
     setIsAlert(last > 175);
   }, [dataPoints]);
 
-  // Smooth screen shake
+  // Red flashing overlay when alert active
+  useEffect(() => {
+    let interval;
+    if (isAlert) {
+      interval = setInterval(() => {
+        setFlashOpacity(0.3);
+        setTimeout(() => setFlashOpacity(0), 500);
+      }, 1200);
+    } else setFlashOpacity(0);
+    return () => clearInterval(interval);
+  }, [isAlert]);
+
+  // Screen shake effect when alert active
   useEffect(() => {
     let active = true;
 
@@ -174,7 +181,7 @@ export default function GraphicPage() {
       document.body.style.overflowY = "";
     }
 
-    async function loop() {
+    async function shakeLoop() {
       while (active && isAlert) {
         await shakeControls.start({
           x: [0, -4, 4, -4, 4, 0],
@@ -184,7 +191,7 @@ export default function GraphicPage() {
       }
     }
 
-    if (isAlert) loop();
+    if (isAlert) shakeLoop();
     else shakeControls.start({ x: 0, rotate: 0 });
 
     return () => {
@@ -194,21 +201,7 @@ export default function GraphicPage() {
     };
   }, [isAlert]);
 
-  // Red flash overlay
-  useEffect(() => {
-    let interval;
-    if (isAlert) {
-      interval = setInterval(() => {
-        setFlashOpacity(0.3);
-        setTimeout(() => setFlashOpacity(0), 500);
-      }, 1200);
-    } else {
-      setFlashOpacity(0);
-    }
-    return () => clearInterval(interval);
-  }, [isAlert]);
-
-  // Pulse chart when alert active
+  // Chart pulsing
   useEffect(() => {
     if (isAlert) {
       setPulse(true);
@@ -216,6 +209,8 @@ export default function GraphicPage() {
       return () => clearTimeout(t);
     }
   }, [dataPoints]);
+
+  const lastValue = dataPoints.at(-1);
 
   // Chart setup
   const chartData = {
@@ -230,9 +225,6 @@ export default function GraphicPage() {
           : "rgba(99,102,241,0.25)",
         fill: true,
         tension: 0.4,
-        pointBackgroundColor: "white",
-        pointBorderColor: isAlert ? "#dc2626" : "#6366f1",
-        pointRadius: 4,
       },
     ],
   };
@@ -240,27 +232,22 @@ export default function GraphicPage() {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-    scales: {
-      y: { min: 30, max: 300, grid: { color: "#f5f5f5" } },
-      x: { grid: { color: "#f5f5f5" } },
-    },
     plugins: { legend: { display: false } },
-    animation: { duration: 700, easing: "easeOutQuart" },
   };
-
-  const lastValue = dataPoints.at(-1);
 
   return (
     <motion.div
       animate={shakeControls}
       className={`relative min-h-screen flex flex-col items-center justify-start bg-gradient-to-b ${bgColor} overflow-hidden`}
     >
+      {/* Flash overlay */}
       <motion.div
         animate={{ opacity: flashOpacity }}
-        transition={{ duration: 0.5, ease: "easeInOut" }}
+        transition={{ duration: 0.5 }}
         className="absolute inset-0 bg-red-500 pointer-events-none z-0"
       />
 
+      {/* Eyes */}
       <div className="flex justify-center items-center mt-6 gap-8 z-10">
         {[0, 1].map((i) => (
           <motion.div
@@ -294,21 +281,26 @@ export default function GraphicPage() {
         ))}
       </div>
 
+      {/* Title */}
       <h1 className="text-3xl font-bold text-gray-700 text-center mt-6 mb-1 z-10">
         Suikerspiegel Dashboard
       </h1>
+
+      {/* Show last grabbed snack */}
       {lastGrab && (
         <p className="text-center text-gray-600 mb-4 z-10">
           Laatste snack: <b className="text-pink-700">{lastGrab}</b>
         </p>
       )}
 
+
+      {/* Chart */}
       <motion.div
         animate={pulse ? { scale: [1, 1.03, 1] } : { scale: 1 }}
         transition={{ duration: 0.4 }}
         className={`bg-white shadow-lg rounded-2xl p-5 w-full max-w-md border ${
           isAlert ? "border-red-300" : "border-gray-200"
-        } z-10`}
+        } z-10 mt-6`}
       >
         <div className="h-60">
           <Line data={chartData} options={options} />
@@ -326,7 +318,7 @@ export default function GraphicPage() {
       </motion.div>
 
       <p className="mt-5 text-center text-sm text-gray-500 mb-4 z-10">
-        When sugar exceeds 175, system enters alert mode
+        When sugar exceeds 175, the system shakes and enters alert mode
       </p>
     </motion.div>
   );

@@ -161,6 +161,18 @@ app.post("/sugar_alert", async (req, res) => {
   res.json({ ok: true });
 });
 
+// Broadcast refresh event to all connected clients
+app.post("/broadcast_refresh", async (req, res) => {
+  console.log("[system] Broadcast refresh_all triggered");
+  try {
+    await pusher.trigger("system", "refresh_all", { source: "graphic" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.warn("Failed to broadcast refresh:", err.message);
+    res.status(500).json({ error: "broadcast failed" });
+  }
+});
+
 // Emit sugar alert event every second
 setInterval(async () => {
   try {
